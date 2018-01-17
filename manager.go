@@ -63,13 +63,14 @@ func StartRound(roundIndex int32) error {
 		return nil
 	}
 
-	r := rand.Intn(len(questions))
-	log.Println(r)
-	q:=questions[r]
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	curRandom := r.Intn(len(questions))
+	log.Println(curRandom)
+	q:=questions[curRandom]
 
 	log.Println(q.SDesc)
 
-	time.Sleep(10000)
+	time.Sleep(time.Second * 10)
 
 	roundIndex +=1
 	go StartRound(roundIndex)
