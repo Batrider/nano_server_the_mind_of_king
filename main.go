@@ -7,6 +7,7 @@ import (
 	"github.com/urfave/cli"
 	"github.com/lonnng/nano"
 	"github.com/lonnng/nano/serialize/json"
+	"./protocol"
 )
 
 func main() {
@@ -33,10 +34,11 @@ func server(ctx *cli.Context) {
 
 	m := NewManager()
 	m.LoadQuestions()
-	m.ShowQuestions()
-
 	nano.Register(m)
-	nano.Register(NewRoom())
+
+	r:= NewRoom()
+	r.players = make(map[int64]*protocol.Player)
+	nano.Register(r)
 	nano.SetSerializer(json.NewSerializer())
 
 	log.SetFlags(log.LstdFlags | log.Llongfile)
