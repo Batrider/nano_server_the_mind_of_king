@@ -9,7 +9,6 @@ import (
 	"log"
 	"time"
 	"math/rand"
-	"encoding/json"
 )
 
 type Room struct {
@@ -27,8 +26,7 @@ func NewRoom() *Room {
 
 func (w *Room) Init(){
 	nano.OnSessionClosed(func(session *session.Session) {
-		w.Leave(session)
-		w.Broadcast("leave",&protocol.LeaveWorldResponse{ID:session.ID()})
+		w.LeaveRoom(session,nil)
 	})
 }
 
@@ -55,63 +53,103 @@ func(w *Room) LeaveRoom(s *session.Session,msg []byte) error{
 			w.ownPlayerId = w.Members()[0]
 		}
 	}
+	delete(w.players, s.ID())
 	log.Println("Leave &v",s.ID())
-	return w.Broadcast("leave",msg)
+	return w.Broadcast("leave",s.ID())
 }
 
 const totalCount = 5
+var curRound = 0
+var curRoundCommitCount = 0
 var curQuestion protocol.Question
 var curQuestionTimeUnix int64
 var questions []protocol.Question
 func (w *Room) StartCompetition(s * session.Session,msg *protocol.StartRequest) error {
 
-	go StartRound(w)
+	if curQuestion.Id != 0{
+		log.Println("playing")
+		log.Println(curQuestion)
+		return nil
+	}
+	if w.ownPlayerId != s.ID(){
+		log.Println("you aren't owner")
+		return nil
+	}
+	go NewAQuestion(w)
+
 	return nil
 }
 
-func StartRound(w *Room)  {
+func NewAQuestion(w *Room) {
+	curRound ++
+	curRoundCommitCount = 0
 	log.Println("Start")
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	curRandom := r.Intn(len(questions))
+	log.Println(curRandom)
+	curQuestion = questions[curRandom]
+	curQuestionTimeUnix = time.Now().Unix()
+	w.Broadcast("questionNotify", &curQuestion)
 
-	for i := 0; i < totalCount; i++ {
+	go CountDown(w)
+}
 
-		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		curRandom := r.Intn(len(questions))
-		log.Println(curRandom)
-		curQuestion = questions[curRandom]
-		curQuestionTimeUnix = time.Now().Unix()
-		data, error := json.Marshal(curQuestion)
-		if error == nil {
-			log.Println("questionNotify")
-			w.Broadcast("questionNotify", data)
-		}
-		time.Sleep(time.Second * 10)
+func CountDown(w *Room) {
+	nowRound := curRound
+	time.Sleep(10 * time.Second)
+	if nowRound == curRound && curRound < totalCount {
+		NewAQuestion(w)
 	}
-
-	log.Println("End")
-
 }
 
 func(w *Room) CommitAnswer(s *session.Session,playerAnswer *protocol.PlayerAnswer) error {
 	log.Println("CommitAnswer &v", s.ID())
-	if &curQuestion == nil {
+	if curQuestion.Id == 0 {
 		return nil
 	}
+	if w.players[s.ID()].Id == 0 {
+		return nil
+	}
+
 	notify := new(protocol.AnswerNotify)
 	notify.Id = s.ID()
 	isRight := curQuestion.IRightIdx == playerAnswer.AnswerIndex
 	notify.IsRight = isRight
 	if isRight{
+		notify.Score = CalculateScore(curQuestionTimeUnix)
+		w.players[s.ID()].Score += notify.Score
+	}
+	w.Broadcast("AnswerNotify",notify)
 
+
+	curRoundCommitCount ++
+	if curRound < totalCount{
+		if curRoundCommitCount >=len(w.players) {
+		go NewAQuestion(w)
+	}
+	}else {
+		//结束了
+		var maxScoreId int64 = 0
+		var maxScore int64 = 0
+		for _, value := range w.players {
+			if value.Score > maxScore {
+				maxScore = value.Score
+				maxScoreId = value.Id
+			}
+		}
+
+		w.Broadcast("endCompetition", &protocol.EndCompetition{Id:maxScoreId})
 	}
 
-	notify.Score = CalculateScore(curQuestionTimeUnix)
 	return nil
-	//
 }
 
 var totalTime int64= 10
 func CalculateScore(lastTime int64) int64 {
 	leftTime := totalTime - (time.Now().Unix() - lastTime)
+	log.Println("left time &v",leftTime)
 	score := 200 * leftTime / totalTime
+	log.Println("score & v",score)
+
 	return score
 }

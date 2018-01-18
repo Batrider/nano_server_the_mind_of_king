@@ -47,3 +47,7 @@ type Player struct {
 type PlayerLoginInfo struct {
 	Name string `json:"name"`
 }
+
+type EndCompetition struct {
+	Id int64 `json:"id"'`
+}
